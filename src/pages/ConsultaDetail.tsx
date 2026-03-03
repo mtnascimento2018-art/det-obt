@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Consulta, Comentario, Usuario, Empresa, AuditoriaLog } from '../types';
 import { GoogleGenAI } from "@google/genai";
 import MentionInput from '../components/MentionInput';
+import PublicProfileModal from '../components/PublicProfileModal';
 
 interface ConsultaDetailProps {
   user: Usuario;
@@ -25,6 +26,7 @@ export default function ConsultaDetail({ user }: ConsultaDetailProps) {
   const [submittingComment, setSubmittingComment] = useState(false);
   const [showEmpresaForm, setShowEmpresaForm] = useState(false);
   const [submittingEmpresa, setSubmittingEmpresa] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<Usuario | null>(null);
   const [newEmpresa, setNewEmpresa] = useState({
     cnpj: '',
     razao_social: '',
@@ -393,6 +395,21 @@ export default function ConsultaDetail({ user }: ConsultaDetailProps) {
     }
   };
 
+  const handleMentionClick = async (mention: string) => {
+    const nip = mention.substring(1); // Remove @
+    try {
+      const res = await fetch(`/api/users/nip/${nip}`);
+      if (res.ok) {
+        const u = await res.json();
+        setSelectedUser(u);
+      } else {
+        // alert("Usuário não encontrado");
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-4">
@@ -493,7 +510,19 @@ export default function ConsultaDetail({ user }: ConsultaDetailProps) {
             </div>
 
             <div className="prose prose-invert max-w-none">
-              <p className="text-[#FFFFFF]/90 whitespace-pre-wrap leading-relaxed">{consulta.descricao}</p>
+              <p className="text-[#FFFFFF]/90 whitespace-pre-wrap leading-relaxed">
+                {consulta.descricao.split(/(@\w+)/g).map((part, i) => 
+                  part.startsWith('@') ? (
+                    <button 
+                      key={i} 
+                      onClick={() => handleMentionClick(part)} 
+                      className="text-[#39FF14] font-bold hover:underline bg-transparent border-none p-0 cursor-pointer"
+                    >
+                      {part}
+                    </button>
+                  ) : part
+                )}
+              </p>
             </div>
 
             {/* Fornecedores Section */}
@@ -891,7 +920,15 @@ export default function ConsultaDetail({ user }: ConsultaDetailProps) {
                 </div>
                 <p className="text-sm text-[#FFFFFF]/80 whitespace-pre-wrap leading-relaxed">
                   {com.texto.split(/(@\w+)/g).map((part, i) => 
-                    part.startsWith('@') ? <span key={i} className="text-[#39FF14] font-bold">{part}</span> : part
+                    part.startsWith('@') ? (
+                      <button 
+                        key={i} 
+                        onClick={() => handleMentionClick(part)} 
+                        className="text-[#39FF14] font-bold hover:underline bg-transparent border-none p-0 cursor-pointer"
+                      >
+                        {part}
+                      </button>
+                    ) : part
                   )}
                 </p>
                 {com.arquivo_url && (
@@ -1083,6 +1120,13 @@ export default function ConsultaDetail({ user }: ConsultaDetailProps) {
           </div>
         )}
       </AnimatePresence>
+      {selectedUser && (
+        <PublicProfileModal 
+          user={selectedUser} 
+          currentUser={user} 
+          onClose={() => setSelectedUser(null)} 
+        />
+      )}
     </div>
   );
 }

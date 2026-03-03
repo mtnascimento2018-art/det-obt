@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Consulta, Usuario, StatusConsulta } from '../types';
 import { GoogleGenAI } from "@google/genai";
 import MentionInput from '../components/MentionInput';
+import PublicProfileModal from '../components/PublicProfileModal';
 
 interface DashboardProps {
   user: Usuario;
@@ -17,6 +18,7 @@ export default function Dashboard({ user }: DashboardProps) {
   const [loading, setLoading] = useState(true);
   const [showNewForm, setShowNewForm] = useState(false);
   const [activeTab, setActiveTab] = useState<'aberto' | 'resolvido'>('aberto');
+  const [selectedUser, setSelectedUser] = useState<Usuario | null>(null);
   
   // Advanced Search State
   const [searchQuery, setSearchQuery] = useState('');
@@ -70,6 +72,21 @@ export default function Dashboard({ user }: DashboardProps) {
       console.error('Erro ao buscar consultas', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleMentionClick = async (e: React.MouseEvent, mention: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const nip = mention.substring(1); // Remove @
+    try {
+      const res = await fetch(`/api/users/nip/${nip}`);
+      if (res.ok) {
+        const u = await res.json();
+        setSelectedUser(u);
+      }
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -601,7 +618,19 @@ export default function Dashboard({ user }: DashboardProps) {
                     )}
                   </div>
 
-                  <p className="text-sm text-[#FFFFFF]/80 line-clamp-2">{c.descricao}</p>
+                  <p className="text-sm text-[#FFFFFF]/80 line-clamp-2">
+                    {c.descricao.split(/(@\w+)/g).map((part, i) => 
+                      part.startsWith('@') ? (
+                        <button 
+                          key={i} 
+                          onClick={(e) => handleMentionClick(e, part)} 
+                          className="text-[#39FF14] font-bold hover:underline bg-transparent border-none p-0 cursor-pointer"
+                        >
+                          {part}
+                        </button>
+                      ) : part
+                    )}
+                  </p>
 
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pt-3 text-[#818384] border-t border-[#1A3A1A]/50">
                     <button 
@@ -638,6 +667,13 @@ export default function Dashboard({ user }: DashboardProps) {
           ))
         )}
       </div>
+      {selectedUser && (
+        <PublicProfileModal 
+          user={selectedUser} 
+          currentUser={user} 
+          onClose={() => setSelectedUser(null)} 
+        />
+      )}
     </div>
   );
 }

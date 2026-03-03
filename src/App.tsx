@@ -245,7 +245,7 @@ export default function App() {
         </main>
 
         {/* Footer */}
-        <footer className="bg-[#0A240A] border-t border-[#1A3A1A] py-8">
+        <footer className="bg-[#0A240A] border-t border-[#1A3A1A] py-8 pb-24 md:pb-8">
           <div className="max-w-7xl mx-auto px-4 flex flex-col items-center gap-4">
             <div className="flex flex-col items-center gap-1">
               <p className="text-[10px] text-[#39FF14]/60 uppercase font-bold tracking-widest text-center">

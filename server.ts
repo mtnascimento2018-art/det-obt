@@ -532,7 +532,7 @@ async function startServer() {
     const { q } = req.query;
     if (q) {
       const users = db.prepare(`
-        SELECT id, nome, codigo_interno, organizacao_militar, perfil 
+        SELECT id, nome, codigo_interno, organizacao_militar, perfil, funcao 
         FROM usuarios 
         WHERE nome LIKE ? OR codigo_interno LIKE ? OR organizacao_militar LIKE ?
         LIMIT 10
@@ -541,6 +541,23 @@ async function startServer() {
     }
     const users = db.prepare("SELECT * FROM usuarios").all();
     res.json(users);
+  });
+
+  app.get("/api/users/nip/:nip", (req, res) => {
+    const { nip } = req.params;
+    const user = db.prepare("SELECT * FROM usuarios WHERE codigo_interno = ?").get(nip);
+    if (!user) return res.status(404).json({ error: "Usuário não encontrado" });
+    res.json(user);
+  });
+
+  app.get("/api/users/nip/:nip", (req, res) => {
+    const { nip } = req.params;
+    const user = db.prepare("SELECT * FROM usuarios WHERE codigo_interno = ?").get(nip);
+    if (user) {
+      res.json(user);
+    } else {
+      res.status(404).json({ error: "Usuário não encontrado" });
+    }
   });
 
   app.post("/api/users", (req, res) => {
@@ -894,7 +911,7 @@ async function startServer() {
   });
 
   app.get("/api/itens", (req, res) => {
-    const itens = db.prepare("SELECT DISTINCT numero_item, nome_item, classificacao FROM consultas").all();
+    const itens = db.prepare("SELECT DISTINCT numero_item, nome_item, classificacao, meio_operacional FROM consultas").all();
     res.json(itens);
   });
 

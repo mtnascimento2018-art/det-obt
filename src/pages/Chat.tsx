@@ -560,7 +560,7 @@ export default function Chat({ user }: ChatProps) {
                     type="text"
                     placeholder="Pesquisar por nome, código ou OM..."
                     onChange={(e) => fetchUsers(e.target.value)}
-                    className="w-full reddit-input pl-10 pr-4 py-2"
+                    className="w-full reddit-input reddit-input-search py-2"
                   />
                 </div>
                 <div className="max-h-80 overflow-y-auto divide-y divide-[#343536] custom-scrollbar">

@@ -9,19 +9,19 @@ interface EmpresasProps {
 
 export default function Empresas({ user }: EmpresasProps) {
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
-  const [itens, setItens] = useState<{numero_item: string, nome_item: string, classificacao?: string}[]>([]);
+  const [itens, setItens] = useState<{numero_item: string, nome_item: string, classificacao?: string, meio_operacional?: string}[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedItemNum, setSelectedItemNum] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  
-  // Advanced filters
-  const [filterClassificacao, setFilterClassificacao] = useState('');
-  const [filterCodigo, setFilterCodigo] = useState('');
-  const [filterOm, setFilterOm] = useState('');
-  const [filterNome, setFilterNome] = useState('');
-  const [filterAplicacao, setFilterAplicacao] = useState('');
+
+  // Advanced Search State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedMeios, setSelectedMeios] = useState<string[]>([]);
+  const [selectedClassificacoes, setSelectedClassificacoes] = useState<string[]>([]);
+  const [selectedTipos, setSelectedTipos] = useState<string[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
+  const [classificacoes, setClassificacoes] = useState<{id: number, nome: string}[]>([]);
 
   const [newEmpresa, setNewEmpresa] = useState({
     cnpj: '',
@@ -32,8 +32,17 @@ export default function Empresas({ user }: EmpresasProps) {
   });
 
   useEffect(() => {
-    Promise.all([fetchEmpresas(), fetchItens()]).finally(() => setLoading(false));
+    Promise.all([fetchEmpresas(), fetchItens(), fetchClassificacoes()]).finally(() => setLoading(false));
   }, []);
+
+  const fetchClassificacoes = async () => {
+    try {
+      const res = await fetch('/api/config/classificacoes');
+      if (res.ok) setClassificacoes(await res.json());
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const fetchEmpresas = async () => {
     try {
@@ -116,16 +125,16 @@ export default function Empresas({ user }: EmpresasProps) {
   // Group companies by item number
   const groupedItems = empresas.reduce((acc, emp) => {
     if (!acc[emp.numero_item]) {
-      acc[emp.numero_item] = { nome: '', classificacao: '', empresas: [] };
+      acc[emp.numero_item] = { nome: '', classificacao: '', meio_operacional: '', empresas: [] };
     }
     acc[emp.numero_item].empresas.push(emp);
     return acc;
-  }, {} as Record<string, { nome: string, classificacao?: string, empresas: Empresa[] }>);
+  }, {} as Record<string, { nome: string, classificacao?: string, meio_operacional?: string, empresas: Empresa[] }>);
 
   // Add items from consultations that don't have companies yet
   itens.forEach(item => {
     if (!groupedItems[item.numero_item]) {
-      groupedItems[item.numero_item] = { nome: item.nome_item, classificacao: item.classificacao, empresas: [] };
+      groupedItems[item.numero_item] = { nome: item.nome_item, classificacao: item.classificacao, meio_operacional: item.meio_operacional, empresas: [] };
     } else {
       if (!groupedItems[item.numero_item].nome) {
         groupedItems[item.numero_item].nome = item.nome_item;
@@ -133,29 +142,43 @@ export default function Empresas({ user }: EmpresasProps) {
       if (!groupedItems[item.numero_item].classificacao && item.classificacao) {
         groupedItems[item.numero_item].classificacao = item.classificacao;
       }
+      if (!groupedItems[item.numero_item].meio_operacional && item.meio_operacional) {
+        groupedItems[item.numero_item].meio_operacional = item.meio_operacional;
+      }
     }
   });
 
+  const uniqueMeios = Array.from(new Set(Object.values(groupedItems).map(g => g.meio_operacional).filter(Boolean))) as string[];
+
+  const toggleMeio = (meio: string) => {
+    setSelectedMeios(prev => prev.includes(meio) ? prev.filter(m => m !== meio) : [...prev, meio]);
+  };
+
+  const toggleClassificacao = (cls: string) => {
+    setSelectedClassificacoes(prev => prev.includes(cls) ? prev.filter(c => c !== cls) : [...prev, cls]);
+  };
+
+  const toggleTipo = (tipo: string) => {
+    setSelectedTipos(prev => prev.includes(tipo) ? prev.filter(t => t !== tipo) : [...prev, tipo]);
+  };
+
   const filteredItemNumbers = Object.keys(groupedItems).filter(num => {
     const group = groupedItems[num];
-    const matchesGlobal = !filter || 
-      num.toLowerCase().includes(filter.toLowerCase()) ||
-      group.nome.toLowerCase().includes(filter.toLowerCase()) ||
-      group.empresas.some(e => e.razao_social.toLowerCase().includes(filter.toLowerCase()));
+    const matchesSearch = searchQuery === '' || 
+      num.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      group.nome.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      group.empresas.some(e => e.razao_social.toLowerCase().includes(searchQuery.toLowerCase()));
 
-    const matchesClassificacao = !filterClassificacao || 
-      (group.classificacao && group.classificacao.toLowerCase().includes(filterClassificacao.toLowerCase()));
+    const matchesClassificacao = selectedClassificacoes.length === 0 || 
+      (group.classificacao && selectedClassificacoes.includes(group.classificacao));
 
-    const matchesCodigo = !filterCodigo || 
-      num.toLowerCase().includes(filterCodigo.toLowerCase());
+    const matchesMeio = selectedMeios.length === 0 || 
+      (group.meio_operacional && selectedMeios.includes(group.meio_operacional));
 
-    const matchesNome = !filterNome || 
-      group.nome.toLowerCase().includes(filterNome.toLowerCase());
+    const matchesTipo = selectedTipos.length === 0 || 
+      group.empresas.some(e => selectedTipos.includes(e.tipo));
 
-    const matchesOm = !filterOm || 
-      group.empresas.some(e => e.indicado_por.toLowerCase().includes(filterOm.toLowerCase()));
-
-    return matchesGlobal && matchesClassificacao && matchesCodigo && matchesNome && matchesOm;
+    return matchesSearch && matchesClassificacao && matchesMeio && matchesTipo;
   });
 
   if (loading) {
@@ -169,51 +192,102 @@ export default function Empresas({ user }: EmpresasProps) {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-4">
+      <div className="flex flex-col gap-4">
         <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-          <div className="relative w-full md:max-w-md">
+          <div className="relative w-full md:max-w-xl">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#818384]" />
             <input 
               type="text" 
-              placeholder="Pesquisar geral..." 
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-[#0A240A] border border-[#1A3A1A] rounded-lg text-sm text-white focus:outline-none focus:border-[#39FF14] transition-colors"
+              placeholder="Pesquisar por PI, nome, empresa..." 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full reddit-input reddit-input-search h-11"
             />
+            <button 
+              onClick={() => setShowFilters(!showFilters)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-[#39FF14]/10 rounded text-[#39FF14]"
+            >
+              <Filter className="w-4 h-4" />
+            </button>
           </div>
         </div>
         
-        {/* Quick Filters */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-          <input 
-            type="text" 
-            placeholder="Classificação" 
-            value={filterClassificacao}
-            onChange={(e) => setFilterClassificacao(e.target.value)}
-            className="px-3 py-1.5 bg-[#0A240A] border border-[#1A3A1A] rounded text-xs text-white focus:border-[#39FF14] outline-none"
-          />
-          <input 
-            type="text" 
-            placeholder="Código Item" 
-            value={filterCodigo}
-            onChange={(e) => setFilterCodigo(e.target.value)}
-            className="px-3 py-1.5 bg-[#0A240A] border border-[#1A3A1A] rounded text-xs text-white focus:border-[#39FF14] outline-none"
-          />
-          <input 
-            type="text" 
-            placeholder="Nome Item" 
-            value={filterNome}
-            onChange={(e) => setFilterNome(e.target.value)}
-            className="px-3 py-1.5 bg-[#0A240A] border border-[#1A3A1A] rounded text-xs text-white focus:border-[#39FF14] outline-none"
-          />
-          <input 
-            type="text" 
-            placeholder="OM Indicadora" 
-            value={filterOm}
-            onChange={(e) => setFilterOm(e.target.value)}
-            className="px-3 py-1.5 bg-[#0A240A] border border-[#1A3A1A] rounded text-xs text-white focus:border-[#39FF14] outline-none"
-          />
-        </div>
+        {/* Advanced Filters */}
+        <AnimatePresence>
+          {showFilters && (
+            <motion.div 
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="bg-[#0A240A] border border-[#1A3A1A] rounded-lg p-4 space-y-4">
+                <div>
+                  <p className="text-[10px] font-bold text-[#39FF14] uppercase mb-2 tracking-widest">Meio Operacional</p>
+                  <div className="flex flex-wrap gap-2">
+                    {uniqueMeios.map(meio => (
+                      <button
+                        key={meio}
+                        onClick={() => toggleMeio(meio)}
+                        className={`px-3 py-1 rounded-full text-xs font-bold transition-all border ${
+                          selectedMeios.includes(meio) 
+                          ? 'bg-[#39FF14] text-[#051A05] border-[#39FF14]' 
+                          : 'bg-transparent text-[#818384] border-[#1A3A1A] hover:border-[#39FF14]/50'
+                        }`}
+                      >
+                        {meio}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-[#39FF14] uppercase mb-2 tracking-widest">Classificação</p>
+                  <div className="flex flex-wrap gap-2">
+                    {classificacoes.map(cls => (
+                      <button
+                        key={cls.id}
+                        onClick={() => toggleClassificacao(cls.nome)}
+                        className={`px-3 py-1 rounded-full text-xs font-bold transition-all border ${
+                          selectedClassificacoes.includes(cls.nome) 
+                          ? 'bg-[#39FF14] text-[#051A05] border-[#39FF14]' 
+                          : 'bg-transparent text-[#818384] border-[#1A3A1A] hover:border-[#39FF14]/50'
+                        }`}
+                      >
+                        {cls.nome}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-[#39FF14] uppercase mb-2 tracking-widest">Tipo de Fornecedor</p>
+                  <div className="flex flex-wrap gap-2">
+                    {['fabrica', 'fornece', 'similar'].map(tipo => (
+                      <button
+                        key={tipo}
+                        onClick={() => toggleTipo(tipo)}
+                        className={`px-3 py-1 rounded-full text-xs font-bold transition-all border capitalize ${
+                          selectedTipos.includes(tipo) 
+                          ? 'bg-[#39FF14] text-[#051A05] border-[#39FF14]' 
+                          : 'bg-transparent text-[#818384] border-[#1A3A1A] hover:border-[#39FF14]/50'
+                        }`}
+                      >
+                        {tipo}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <button 
+                    onClick={() => { setSelectedMeios([]); setSelectedClassificacoes([]); setSelectedTipos([]); setSearchQuery(''); }}
+                    className="text-[10px] font-bold text-[#818384] hover:text-[#39FF14] uppercase underline"
+                  >
+                    Limpar Filtros
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
       <div className="flex items-center gap-2 text-xs font-bold text-[#818384] uppercase">
         <Filter className="w-4 h-4" />

@@ -95,7 +95,13 @@ export default function MentionInput({ value, onChange, placeholder, className, 
               </div>
               <div className="min-w-0">
                 <p className="text-xs font-bold truncate">{u.nome}</p>
-                <p className="text-[10px] text-[#39FF14] font-mono uppercase">{u.codigo_interno}</p>
+                <div className="flex flex-wrap items-center gap-1">
+                  <p className="text-[10px] text-[#39FF14] font-mono uppercase">{u.codigo_interno}</p>
+                  <span className="text-[10px] text-[#818384]">•</span>
+                  <p className="text-[10px] text-[#818384] uppercase font-bold">{u.organizacao_militar}</p>
+                  <span className="text-[10px] text-[#818384]">•</span>
+                  <p className="text-[10px] text-[#818384] uppercase font-bold">{u.funcao}</p>
+                </div>
               </div>
             </button>
           ))}
