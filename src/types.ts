@@ -1,4 +1,4 @@
-export type Perfil = 'usuario' | 'obtencao' | 'admin';
+export type Perfil = 'usuario' | 'obtencao' | 'catalogacao' | 'diretoria' | 'especialista' | 'admin';
 
 export interface Usuario {
   id: number;
@@ -35,6 +35,7 @@ export interface Consulta {
   data_criacao: string;
   autor_nome: string;
   autor_om: string;
+  autor_perfil?: string;
   total_comentarios: number;
   total_curtidas: number;
 }

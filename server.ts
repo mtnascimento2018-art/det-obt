@@ -216,6 +216,17 @@ if (!hasClassificacao) {
   }
 }
 
+const empresasTableInfo = db.prepare("PRAGMA table_info(empresas)").all() as any[];
+const hasConsultaId = empresasTableInfo.some(col => col.name === 'consulta_id');
+if (!hasConsultaId) {
+  try {
+    db.prepare("ALTER TABLE empresas ADD COLUMN consulta_id INTEGER").run();
+    console.log("Migração: Coluna 'consulta_id' adicionada à tabela 'empresas'.");
+  } catch (e) {
+    console.error("Erro na migração empresas:", e);
+  }
+}
+
 const userTableInfo = db.prepare("PRAGMA table_info(usuarios)").all() as any[];
 const newColumns = [
   { name: 'nome_completo', type: 'TEXT' },
@@ -854,6 +865,7 @@ async function startServer() {
 
   app.patch("/api/consultas/:id/status", (req, res) => {
     const { status, alterado_por, alterado_por_id } = req.body;
+    console.log(`Alterando status do chamado ${req.params.id} para ${status} por ${alterado_por_id}`);
     const oldStatus = db.prepare("SELECT status FROM consultas WHERE id = ?").get(req.params.id).status;
     
     db.prepare("UPDATE consultas SET status = ?, alterado_por = ?, data_status = CURRENT_TIMESTAMP WHERE id = ?").run(
@@ -861,6 +873,7 @@ async function startServer() {
     );
     
     logAuditoria(alterado_por_id, 'Alteração de Status', `Status alterado de ${oldStatus} para ${status}`, req.params.id);
+    console.log(`Log de auditoria criado para o chamado ${req.params.id}`);
     
     // Notify author
     const consulta = db.prepare("SELECT * FROM consultas WHERE id = ?").get(req.params.id);
@@ -985,30 +998,31 @@ async function startServer() {
 
   // Companies API
   app.get("/api/empresas", (req, res) => {
-    const { numero_item, usuario_id } = req.query;
+    const { consulta_id, usuario_id } = req.query;
     let query = `
       SELECT e.*, e.indicado_por_id as usuario_id, u.nome as indicado_por,
       (SELECT COUNT(*) FROM validacoes_empresas WHERE empresa_id = e.id) as total_validacoes
       ${usuario_id ? `, (SELECT COUNT(*) FROM validacoes_empresas WHERE empresa_id = e.id AND usuario_id = ?) as validado_por_mim` : ''}
       FROM empresas e 
       JOIN usuarios u ON e.indicado_por_id = u.id
+      LEFT JOIN consultas c ON e.consulta_id = c.id
     `;
     let params = [];
     if (usuario_id) params.push(usuario_id);
-    if (numero_item) {
-      query += " WHERE e.numero_item = ?";
-      params.push(numero_item);
+    if (consulta_id) {
+      query += " WHERE e.consulta_id = ? OR (e.consulta_id IS NULL AND e.numero_item = (SELECT numero_item FROM consultas WHERE id = ?))";
+      params.push(consulta_id, consulta_id);
     }
     const empresas = db.prepare(query).all(...params);
     res.json(empresas);
   });
 
   app.post("/api/empresas", (req, res) => {
-    const { numero_item, cnpj, razao_social, telefones, emails, tipo, indicado_por_id } = req.body;
+    const { consulta_id, numero_item, cnpj, razao_social, telefones, emails, tipo, indicado_por_id } = req.body;
     const info = db.prepare(`
-      INSERT INTO empresas (numero_item, cnpj, razao_social, telefones, emails, tipo, indicado_por_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(numero_item, cnpj, razao_social, JSON.stringify(telefones), JSON.stringify(emails), tipo, indicado_por_id);
+      INSERT INTO empresas (consulta_id, numero_item, cnpj, razao_social, telefones, emails, tipo, indicado_por_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(consulta_id, numero_item, cnpj, razao_social, JSON.stringify(telefones), JSON.stringify(emails), tipo, indicado_por_id);
     
     logAuditoria(indicado_por_id, 'Indicação de Fornecedor', `Novo fornecedor indicado: ${razao_social}`, info.lastInsertRowid.toString());
     res.json({ id: info.lastInsertRowid });

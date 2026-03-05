@@ -91,7 +91,7 @@ export default function MentionInput({ value, onChange, placeholder, className, 
               className="w-full p-2 flex items-center gap-2 hover:bg-[#39FF14]/10 text-left transition-colors"
             >
               <div className="w-6 h-6 bg-[#0D2D0D] rounded-full flex items-center justify-center text-[#39FF14] text-[10px] font-bold">
-                {u.nome[0]}
+                {u.nome?.[0] || '?'}
               </div>
               <div className="min-w-0">
                 <p className="text-xs font-bold truncate">{u.nome}</p>

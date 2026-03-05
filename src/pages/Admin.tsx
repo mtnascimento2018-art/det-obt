@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, UserPlus, Trash2, Search, Shield, ShieldAlert, ShieldCheck, Loader2, X, Check, Settings, Plus, Anchor, Briefcase, BookOpen, History, Download, Filter, UserMinus, UserCheck, Edit2, BarChart3, PieChart } from 'lucide-react';
+import { Users, UserPlus, Trash2, Search, Shield, ShieldAlert, ShieldCheck, Loader2, X, Check, Settings, Plus, Anchor, Briefcase, BookOpen, History, Download, Filter, UserMinus, UserCheck, Edit2, BarChart3, PieChart, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Usuario, AuditoriaLog } from '../types';
@@ -198,17 +198,24 @@ export default function Admin({ user }: { user: Usuario }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...editingUser, admin_id: user.id })
       });
+      
+      const safeJson = async (r: Response) => {
+        const text = await r.text();
+        try { return JSON.parse(text); } catch (e) { return { error: text || 'Erro desconhecido' }; }
+      };
+
       if (res.ok) {
         setShowEditModal(false);
         setEditingUser(null);
         fetchUsers();
         fetchAuditLogs();
       } else {
-        const data = await res.json();
+        const data = await safeJson(res);
         alert(data.error || 'Erro ao atualizar usuário');
       }
     } catch (err) {
       console.error(err);
+      alert('Erro de conexão ao atualizar usuário');
     } finally {
       setSubmitting(false);
     }
@@ -416,7 +423,7 @@ export default function Admin({ user }: { user: Usuario }) {
                                 <img src={u.foto_perfil} alt={u.nome} className="w-8 h-8 rounded-full object-cover" referrerPolicy="no-referrer" />
                               ) : (
                                 <div className="w-8 h-8 bg-[#0D2D0D] rounded-full flex items-center justify-center text-[#39FF14] font-bold text-xs">
-                                  {u.nome[0]}
+                                  {u.nome?.[0] || '?'}
                                 </div>
                               )}
                               <div className="flex flex-col">
@@ -431,10 +438,16 @@ export default function Admin({ user }: { user: Usuario }) {
                             <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase flex items-center gap-1 w-fit ${
                               u.perfil === 'admin' ? 'bg-red-500/20 text-red-500' :
                               u.perfil === 'obtencao' ? 'bg-blue-500/20 text-blue-500' :
+                              u.perfil === 'catalogacao' ? 'bg-purple-500/20 text-purple-500' :
+                              u.perfil === 'diretoria' ? 'bg-yellow-500/20 text-yellow-500' :
+                              u.perfil === 'especialista' ? 'bg-orange-500/20 text-orange-500' :
                               'bg-[#39FF14]/20 text-[#39FF14]'
                             }`}>
                               {u.perfil === 'admin' ? <ShieldAlert className="w-3 h-3" /> : 
                                u.perfil === 'obtencao' ? <ShieldCheck className="w-3 h-3" /> : 
+                               u.perfil === 'catalogacao' ? <BookOpen className="w-3 h-3" /> :
+                               u.perfil === 'diretoria' ? <Anchor className="w-3 h-3" /> :
+                               u.perfil === 'especialista' ? <Sparkles className="w-3 h-3" /> :
                                <Users className="w-3 h-3" />}
                               {u.perfil}
                             </span>
@@ -795,36 +808,84 @@ export default function Admin({ user }: { user: Usuario }) {
                 </button>
               </div>
               <form onSubmit={handleEditUser} className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
-                <div>
-                  <label className="block text-[10px] font-bold text-[#818384] uppercase mb-1">Nome de Guerra</label>
-                  <input
-                    required
-                    value={editingUser.nome}
-                    onChange={(e) => setEditingUser({ ...editingUser, nome: e.target.value })}
-                    className="w-full reddit-input"
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#818384] uppercase mb-1">Nome de Guerra</label>
+                    <input
+                      required
+                      value={editingUser.nome}
+                      onChange={(e) => setEditingUser({ ...editingUser, nome: e.target.value })}
+                      className="w-full reddit-input"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#818384] uppercase mb-1">NIP (Código)</label>
+                    <input
+                      required
+                      value={editingUser.codigo_interno}
+                      onChange={(e) => setEditingUser({ ...editingUser, codigo_interno: e.target.value })}
+                      className="w-full reddit-input font-mono"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-[#818384] uppercase mb-1">NIP (Código)</label>
-                  <input
-                    required
-                    value={editingUser.codigo_interno}
-                    onChange={(e) => setEditingUser({ ...editingUser, codigo_interno: e.target.value })}
-                    className="w-full reddit-input font-mono"
-                  />
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#818384] uppercase mb-1">Posto/Graduação</label>
+                    <input
+                      value={editingUser.posto_graduacao || ''}
+                      onChange={(e) => setEditingUser({ ...editingUser, posto_graduacao: e.target.value })}
+                      className="w-full reddit-input"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#818384] uppercase mb-1">Ramal</label>
+                    <input
+                      value={editingUser.ramal || ''}
+                      onChange={(e) => setEditingUser({ ...editingUser, ramal: e.target.value })}
+                      className="w-full reddit-input"
+                    />
+                  </div>
                 </div>
+
                 <div>
-                  <label className="block text-[10px] font-bold text-[#818384] uppercase mb-1">Perfil de Acesso</label>
+                  <label className="block text-[10px] font-bold text-[#818384] uppercase mb-1">Organização Militar</label>
                   <select
-                    value={editingUser.perfil}
-                    onChange={(e) => setEditingUser({ ...editingUser, perfil: e.target.value as any })}
-                    className="w-full reddit-input"
+                    value={editingUser.organizacao_militar}
+                    onChange={(e) => setEditingUser({ ...editingUser, organizacao_militar: e.target.value })}
+                    className="w-full reddit-input text-xs"
                   >
-                    <option value="usuario">Militar Usuário</option>
-                    <option value="obtencao">Seção de Obtenção</option>
-                    <option value="admin">Administrador</option>
+                    <option value="">Selecione a OM</option>
+                    {oms.map(o => <option key={o.id} value={o.nome}>{o.nome}</option>)}
                   </select>
                 </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#818384] uppercase mb-1">Função</label>
+                    <input
+                      value={editingUser.funcao || ''}
+                      onChange={(e) => setEditingUser({ ...editingUser, funcao: e.target.value })}
+                      className="w-full reddit-input"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#818384] uppercase mb-1">Perfil de Acesso</label>
+                    <select
+                      value={editingUser.perfil}
+                      onChange={(e) => setEditingUser({ ...editingUser, perfil: e.target.value as any })}
+                      className="w-full reddit-input"
+                    >
+                      <option value="usuario">Militar Usuário</option>
+                      <option value="obtencao">Seção de Obtenção</option>
+                      <option value="catalogacao">Seção de Catalogação</option>
+                      <option value="diretoria">Diretoria</option>
+                      <option value="especialista">Especialista</option>
+                      <option value="admin">Administrador</option>
+                    </select>
+                  </div>
+                </div>
+
                 <div className="flex items-center gap-2 p-3 bg-[#0D2D0D] rounded-lg border border-[#1A3A1A]">
                   <input 
                     type="checkbox" 

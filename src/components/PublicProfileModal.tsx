@@ -35,6 +35,7 @@ export default function PublicProfileModal({ user, currentUser, onClose }: Publi
   }, [currentUser.id, user.id]);
 
   const handleAddFriend = async () => {
+    console.log("Adding friend:", user.id, "Current user:", currentUser.id);
     setLoading(true);
     try {
       const res = await fetch('/api/amizades/solicitar', {
@@ -42,11 +43,18 @@ export default function PublicProfileModal({ user, currentUser, onClose }: Publi
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ usuario_id: currentUser.id, amigo_id: user.id }),
       });
+      console.log("Add friend response:", res);
       if (res.ok) {
         setFriendStatus('pendente');
+        alert('Solicitação de amizade enviada!');
+      } else {
+        const errData = await res.json();
+        console.error("Error adding friend:", errData);
+        alert(`Erro ao enviar solicitação: ${errData.error}`);
       }
     } catch (err) {
       console.error(err);
+      alert('Erro de conexão.');
     } finally {
       setLoading(false);
     }
@@ -72,7 +80,7 @@ export default function PublicProfileModal({ user, currentUser, onClose }: Publi
               <img src={user.foto_perfil} alt={user.nome} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
             ) : (
               <div className="w-full h-full bg-[#0D2D0D] flex items-center justify-center text-[#39FF14] text-4xl font-bold">
-                {user.nome[0]}
+                {user.nome?.[0] || '?'}
               </div>
             )}
           </div>

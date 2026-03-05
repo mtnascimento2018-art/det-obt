@@ -72,17 +72,25 @@ export default function Chat({ user }: ChatProps) {
   };
 
   const handleAddFriend = async (targetId: number) => {
+    console.log("handleAddFriend called with targetId:", targetId);
     try {
       const res = await fetch('/api/amizades/solicitar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ usuario_id: user.id, amigo_id: targetId }),
       });
+      console.log("fetch response:", res);
       if (res.ok) {
         checkFriendStatus(targetId);
+        alert('Solicitação de amizade enviada!');
+      } else {
+        const errorData = await res.json();
+        console.error("Error adding friend:", errorData);
+        alert(`Erro ao enviar solicitação: ${errorData.error || 'Erro desconhecido'}`);
       }
     } catch (err) {
-      console.error(err);
+      console.error("Exception in handleAddFriend:", err);
+      alert('Erro de conexão.');
     }
   };
 
@@ -305,7 +313,7 @@ export default function Chat({ user }: ChatProps) {
                     className={`w-full p-4 flex items-center gap-3 border-b border-[#1A3A1A] hover:bg-[#39FF14]/5 transition-colors text-left ${activeConversa?.id === c.id ? 'bg-[#39FF14]/10' : ''}`}
                   >
                     <div className="w-10 h-10 bg-[#0D2D0D] rounded-full flex items-center justify-center text-[#39FF14] font-bold">
-                      {otherName[0]}
+                      {otherName?.[0] || '?'}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-baseline">
@@ -328,7 +336,7 @@ export default function Chat({ user }: ChatProps) {
                       <div key={p.id} className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2 min-w-0">
                           <div className="w-8 h-8 bg-[#0D2D0D] rounded-full flex items-center justify-center text-[#39FF14] text-xs font-bold">
-                            {p.nome[0]}
+                            {p.nome?.[0] || '?'}
                           </div>
                           <div className="min-w-0">
                             <p className="text-xs font-bold truncate">{p.nome}</p>
@@ -368,7 +376,7 @@ export default function Chat({ user }: ChatProps) {
                         className="w-full p-3 flex items-center gap-3 bg-[#0D2D0D] border border-[#1A3A1A] rounded-lg hover:border-[#39FF14]/50 transition-all text-left group"
                       >
                         <div className="w-10 h-10 bg-[#1A3A1A] rounded-full flex items-center justify-center text-[#39FF14] font-bold group-hover:bg-[#39FF14] group-hover:text-[#051A05] transition-colors">
-                          {a.nome[0]}
+                          {a.nome?.[0] || '?'}
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="font-bold text-sm truncate">{a.nome}</p>
@@ -394,7 +402,7 @@ export default function Chat({ user }: ChatProps) {
                 <ArrowLeft className="w-5 h-5" />
               </button>
               <div className="w-10 h-10 bg-[#1A3A1A] rounded-full flex items-center justify-center text-[#39FF14] font-bold">
-                {(activeConversa.usuario1_id === user.id ? activeConversa.u2_nome : activeConversa.u1_nome)[0]}
+                {((activeConversa.usuario1_id === user.id ? activeConversa.u2_nome : activeConversa.u1_nome) || '?')[0]}
               </div>
               <div>
                 <p className="font-bold text-sm">{activeConversa.usuario1_id === user.id ? activeConversa.u2_nome : activeConversa.u1_nome}</p>
@@ -571,7 +579,7 @@ export default function Chat({ user }: ChatProps) {
                     >
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 bg-[#0D2D0D] rounded-full flex items-center justify-center text-[#39FF14] font-bold">
-                          {u.nome[0]}
+                          {u.nome?.[0] || '?'}
                         </div>
                         <div>
                           <p className="text-sm font-bold text-white">{u.nome}</p>

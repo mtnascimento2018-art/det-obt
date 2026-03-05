@@ -18,6 +18,7 @@ export default function ProfileModal({ user, onClose, onUpdate }: ProfileModalPr
     foto_perfil: user.foto_perfil || '',
     funcao: user.funcao || '',
     conhecimento_material: user.conhecimento_material || '',
+    perfil: user.perfil || 'usuario',
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -31,8 +32,23 @@ export default function ProfileModal({ user, onClose, onUpdate }: ProfileModalPr
           fetch('/api/config/oms'),
           fetch('/api/config/funcoes')
         ]);
-        if (omsRes.ok) setOms(await omsRes.json());
-        if (funcoesRes.ok) setFuncoes(await funcoesRes.json());
+
+        const safeJson = async (res: Response) => {
+          if (!res.ok) return null;
+          const text = await res.text();
+          try {
+            return JSON.parse(text);
+          } catch (e) {
+            console.error('Falha ao parsear JSON da rota:', res.url, text.substring(0, 100));
+            return null;
+          }
+        };
+
+        const omsData = await safeJson(omsRes);
+        const funcoesData = await safeJson(funcoesRes);
+
+        if (omsData) setOms(omsData);
+        if (funcoesData) setFuncoes(funcoesData);
       } catch (err) {
         console.error('Erro ao carregar configurações', err);
       }
@@ -181,6 +197,27 @@ export default function ProfileModal({ user, onClose, onUpdate }: ProfileModalPr
                 {oms.map(o => <option key={o.id} value={o.nome}>{o.nome}</option>)}
               </select>
             </div>
+            <div className="space-y-1">
+              <label className="block text-[10px] font-bold text-[#39FF14] uppercase tracking-widest">Perfil de Acesso</label>
+              <select
+                required
+                disabled={user.perfil === 'admin'}
+                value={formData.perfil}
+                onChange={(e) => setFormData({ ...formData, perfil: e.target.value as any })}
+                className={`w-full reddit-input text-sm ${user.perfil === 'admin' ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                <option value="usuario">Militar Usuário</option>
+                <option value="obtencao">Seção de Obtenção</option>
+                <option value="catalogacao">Seção de Catalogação</option>
+                <option value="diretoria">Diretoria</option>
+                <option value="especialista">Especialista</option>
+                {user.perfil === 'admin' && <option value="admin">Administrador</option>}
+              </select>
+              {user.perfil === 'admin' && <p className="text-[8px] text-[#818384] italic">O perfil Admin só pode ser alterado por outro Admin.</p>}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-1">
               <label className="block text-[10px] font-bold text-[#39FF14] uppercase tracking-widest">Função Atual</label>
               <select

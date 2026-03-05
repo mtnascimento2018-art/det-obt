@@ -8,12 +8,13 @@ import http from "http";
 dotenv.config();
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
-const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
 
 let supabase: any = null;
 if (supabaseUrl && supabaseKey) {
   try {
     supabase = createClient(supabaseUrl, supabaseKey);
+    console.log(`Supabase initialized with ${process.env.SUPABASE_SERVICE_ROLE_KEY ? 'SERVICE_ROLE' : 'ANON'} key`);
   } catch (e) {
     console.error('Erro ao inicializar Supabase:', e);
   }
@@ -64,6 +65,24 @@ async function startServer() {
     }
   };
 
+  const createNotification = async (userId: number, type: string, content: string, link: string) => {
+    try {
+      const { data } = await supabase.from('notificacoes').insert({
+        usuario_id: userId,
+        tipo: type,
+        mensagem: content, // Changed from 'conteudo' to 'mensagem'
+        link: link,
+        lida: false
+      }).select().single();
+      
+      if (data) {
+        sendNotification(userId, data);
+      }
+    } catch (err) {
+      console.error('Erro ao criar notificação:', err);
+    }
+  };
+
   const logAuditoria = async (usuario_id: number | null, acao: string, descricao: string, objeto_afetado?: string) => {
     await supabase.from('auditoria').insert({
       usuario_id, acao, descricao, objeto_afetado
@@ -109,6 +128,11 @@ async function startServer() {
 
   app.get("/api/config/funcoes", async (req, res) => {
     const { data } = await supabase.from('funcoes').select('*').order('nome');
+    res.json(data || []);
+  });
+
+  app.get("/api/config/conhecimentos", async (req, res) => {
+    const { data } = await supabase.from('conhecimentos').select('*').order('nome');
     res.json(data || []);
   });
 
@@ -172,12 +196,99 @@ async function startServer() {
 
   app.get("/api/users", async (req, res) => {
     const { q } = req.query;
-    let query = supabase.from('usuarios').select('*').eq('ativo', true);
     if (q) {
-      query = query.or(`nome.ilike.%${q}%,codigo_interno.ilike.%${q}%,organizacao_militar.ilike.%${q}%`);
+      const { data } = await supabase
+        .from('usuarios')
+        .select('id, nome, codigo_interno, organizacao_militar, perfil, funcao')
+        .eq('ativo', true)
+        .or(`nome.ilike.%${q}%,codigo_interno.ilike.%${q}%,organizacao_militar.ilike.%${q}%`)
+        .limit(10);
+      return res.json(data || []);
     }
-    const { data } = await query.limit(20);
+    const { data } = await supabase.from('usuarios').select('*').order('nome');
     res.json(data || []);
+  });
+
+  app.get("/api/users/nip/:nip", async (req, res) => {
+    const { data, error } = await supabase
+      .from('usuarios')
+      .select('*')
+      .eq('codigo_interno', req.params.nip)
+      .single();
+    if (error || !data) return res.status(404).json({ error: "Usuário não encontrado" });
+    res.json(data);
+  });
+
+  app.post("/api/users", async (req, res) => {
+    const { nome, codigo_interno, organizacao_militar, ramal, perfil, admin_id, posto_graduacao, funcao, nome_completo, conhecimento_material } = req.body;
+    try {
+      const { data, error } = await supabase.from('usuarios').insert({
+        nome, codigo_interno, organizacao_militar, ramal, perfil, posto_graduacao, funcao, nome_completo, conhecimento_material, ativo: true
+      }).select().single();
+
+      if (error) throw error;
+      if (admin_id) {
+        await logAuditoria(Number(admin_id), 'Criação de Usuário', `Admin criou novo usuário: ${nome} (${codigo_interno})`, data.id.toString());
+      }
+      res.json({ id: data.id });
+    } catch (error: any) {
+      console.error('Erro ao criar usuário:', error);
+      res.status(400).json({ error: error.message || "Erro ao criar usuário ou NIP já existe." });
+    }
+  });
+
+  app.patch("/api/users/:id", async (req, res) => {
+    const { id } = req.params;
+    const { nome, codigo_interno, organizacao_militar, ramal, perfil, posto_graduacao, funcao, ativo, admin_id, nome_completo, conhecimento_material } = req.body;
+    
+    try {
+      const updateData: any = {
+        nome, codigo_interno, organizacao_militar, ramal, perfil, posto_graduacao, funcao, nome_completo, conhecimento_material
+      };
+      
+      if (ativo !== undefined) {
+        updateData.ativo = (ativo === 1 || ativo === true);
+      }
+
+      const { error } = await supabase.from('usuarios').update(updateData).eq('id', id);
+
+      if (error) throw error;
+      if (admin_id) {
+        await logAuditoria(Number(admin_id), 'Alteração de Usuário', `Admin alterou dados do usuário ID: ${id}`);
+      }
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('Erro ao atualizar usuário:', error);
+      res.status(400).json({ error: error.message || "Erro ao atualizar usuário." });
+    }
+  });
+
+  app.delete("/api/users/:id", async (req, res) => {
+    const { id } = req.params;
+    // Supabase handles CASCADE if configured, but we can do a simple delete here
+    const { error } = await supabase.from('usuarios').delete().eq('id', id);
+    if (error) return res.status(500).json({ error: "Erro ao deletar usuário." });
+    res.json({ success: true });
+  });
+
+  app.patch("/api/users/:id/profile", async (req, res) => {
+    const { id } = req.params;
+    const { nome, nome_completo, posto_graduacao, organizacao_militar, funcao, conhecimento_material, foto_perfil, ramal } = req.body;
+    
+    let finalFoto = foto_perfil;
+    if (foto_perfil && foto_perfil.startsWith('data:')) {
+      const fileName = `avatar_${id}_${Date.now()}`;
+      const uploadedUrl = await uploadBase64ToStorage(foto_perfil, 'avatars', fileName);
+      if (uploadedUrl) finalFoto = uploadedUrl;
+    }
+
+    const { error } = await supabase.from('usuarios').update({
+      nome, nome_completo, posto_graduacao, organizacao_militar, funcao, conhecimento_material, foto_perfil: finalFoto, ramal
+    }).eq('id', id);
+
+    if (error) return res.status(400).json({ error: "Erro ao atualizar perfil." });
+    await logAuditoria(Number(id), 'Perfil Atualizado', `Usuário atualizou seus próprios dados de perfil.`);
+    res.json({ success: true });
   });
 
   app.get("/api/consultas", async (req, res) => {
@@ -186,21 +297,26 @@ async function startServer() {
       .from('consultas')
       .select(`
         *,
-        usuarios:usuario_id (nome, organizacao_militar, foto_perfil),
+        usuarios:usuario_id (nome, organizacao_militar, foto_perfil, perfil),
         comentarios (count),
         curtidas_consultas (count)
       `)
       .order('data_criacao', { ascending: false });
 
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) {
+      console.error("Error fetching consultas:", error);
+      return res.status(500).json({ error: error.message });
+    }
 
     const formatted = consultas.map((c: any) => ({
       ...c,
       autor_nome: c.usuarios?.nome,
       autor_om: c.usuarios?.organizacao_militar,
       autor_foto: c.usuarios?.foto_perfil,
+      autor_perfil: c.usuarios?.perfil,
       total_comentarios: c.comentarios?.[0]?.count || 0,
-      total_curtidas: c.curtidas_consultas?.[0]?.count || 0
+      total_curtidas: c.curtidas_consultas?.[0]?.count || 0,
+      visualizacoes: c.visualizacoes || 0
     }));
 
     res.json(formatted);
@@ -228,7 +344,7 @@ async function startServer() {
   app.get("/api/consultas/:id", async (req, res) => {
     const { data: c, error } = await supabase
       .from('consultas')
-      .select(`*, usuarios:usuario_id (nome, organizacao_militar, foto_perfil)`)
+      .select(`*, usuarios:usuario_id (nome, organizacao_militar, foto_perfil, perfil)`)
       .eq('id', req.params.id)
       .single();
 
@@ -242,6 +358,7 @@ async function startServer() {
       autor_nome: c.usuarios?.nome,
       autor_om: c.usuarios?.organizacao_militar,
       autor_foto: c.usuarios?.foto_perfil,
+      autor_perfil: c.usuarios?.perfil,
       total_comentarios: total_comentarios || 0,
       total_curtidas: total_curtidas || 0
     });
@@ -252,7 +369,7 @@ async function startServer() {
       .from('comentarios')
       .select(`
         *,
-        usuarios:usuario_id (nome, organizacao_militar, foto_perfil),
+        usuarios:usuario_id (nome, organizacao_militar, foto_perfil, perfil),
         curtidas_comentarios (count)
       `)
       .eq('consulta_id', req.params.id)
@@ -265,6 +382,7 @@ async function startServer() {
       autor_nome: c.usuarios?.nome,
       autor_om: c.usuarios?.organizacao_militar,
       autor_foto: c.usuarios?.foto_perfil,
+      autor_perfil: c.usuarios?.perfil,
       total_curtidas: c.curtidas_comentarios?.[0]?.count || 0
     }));
 
@@ -287,7 +405,24 @@ async function startServer() {
 
     if (error) return res.status(500).json({ error: error.message });
     await logAuditoria(usuario_id, 'Comentário Realizado', `Usuário comentou no chamado ID: ${consulta_id}`, consulta_id.toString());
+    
+    // Notify author
+    const { data: consulta } = await supabase.from('consultas').select('usuario_id, numero_item').eq('id', consulta_id).single();
+    if (consulta && consulta.usuario_id !== usuario_id) {
+      await createNotification(consulta.usuario_id, 'comentario', `Novo comentário no seu chamado ${consulta.numero_item}.`, `/consulta/${consulta_id}`);
+    }
+    
     res.json({ id: info.id });
+  });
+
+  app.post("/api/consultas/:id/visualizar", async (req, res) => {
+    const { data: c } = await supabase.from('consultas').select('visualizacoes').eq('id', req.params.id).single();
+    if (c) {
+      const newViews = (c.visualizacoes || 0) + 1;
+      await supabase.from('consultas').update({ visualizacoes: newViews }).eq('id', req.params.id);
+      console.log(`Updated views for consultation ${req.params.id} to ${newViews}`);
+    }
+    res.json({ success: true });
   });
 
   app.post("/api/consultas/:id/curtir", async (req, res) => {
@@ -299,6 +434,197 @@ async function startServer() {
       await supabase.from('curtidas_consultas').delete().match({ consulta_id: req.params.id, usuario_id });
       res.json({ success: true, removed: true });
     }
+  });
+
+  app.post("/api/comentarios/:id/curtir", async (req, res) => {
+    const { usuario_id } = req.body;
+    try {
+      await supabase.from('curtidas_comentarios').insert({ comentario_id: req.params.id, usuario_id });
+      res.json({ success: true });
+    } catch (e) {
+      await supabase.from('curtidas_comentarios').delete().match({ comentario_id: req.params.id, usuario_id });
+      res.json({ success: true, removed: true });
+    }
+  });
+
+  app.get("/api/amizades/status/:uid/:fid", async (req, res) => {
+    const { uid, fid } = req.params;
+    try {
+      const { data, error } = await supabase
+        .from('amizades')
+        .select('status')
+        .or(`and(usuario_id.eq.${uid},amigo_id.eq.${fid}),and(usuario_id.eq.${fid},amigo_id.eq.${uid})`)
+        .maybeSingle();
+      
+      if (error) {
+        if (error.code === '42703') { // undefined_column
+           // Fallback: check if friendship exists at all
+           const { data: exists } = await supabase
+             .from('amizades')
+             .select('id')
+             .or(`and(usuario_id.eq.${uid},amigo_id.eq.${fid}),and(usuario_id.eq.${fid},amigo_id.eq.${uid})`)
+             .maybeSingle();
+           return res.json(exists ? { status: 'aceito' } : null);
+        }
+        throw error;
+      }
+      res.json(data);
+    } catch (err: any) {
+      console.error("Error checking friendship status:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/amigos/:userId", async (req, res) => {
+    const { userId } = req.params;
+    try {
+      const { data, error } = await supabase
+        .from('amizades')
+        .select(`
+          id,
+          status,
+          u1:usuario_id (id, nome, codigo_interno, organizacao_militar, foto_perfil, funcao),
+          u2:amigo_id (id, nome, codigo_interno, organizacao_militar, foto_perfil, funcao)
+        `)
+        .eq('status', 'aceito')
+        .or(`usuario_id.eq.${userId},amigo_id.eq.${userId}`);
+      
+      if (error) {
+        if (error.code === '42703') { // undefined_column
+           // Fallback: return all friendships as accepted
+           const { data: allData } = await supabase
+             .from('amizades')
+             .select(`
+               id,
+               u1:usuario_id (id, nome, codigo_interno, organizacao_militar, foto_perfil, funcao),
+               u2:amigo_id (id, nome, codigo_interno, organizacao_militar, foto_perfil, funcao)
+             `)
+             .or(`usuario_id.eq.${userId},amigo_id.eq.${userId}`);
+             
+           const amigos = allData?.map((a: any) => {
+             const amigo = a.u1.id == userId ? a.u2 : a.u1;
+             return { ...amigo, amizade_id: a.id, status: 'aceito' };
+           }) || [];
+           return res.json(amigos);
+        }
+        throw error;
+      }
+
+      const amigos = data.map((a: any) => {
+        const amigo = a.u1.id == userId ? a.u2 : a.u1;
+        return { ...amigo, amizade_id: a.id };
+      });
+      res.json(amigos);
+    } catch (err: any) {
+      console.error("Error fetching friends:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/amizades/pendentes/:userId", async (req, res) => {
+    const { userId } = req.params;
+    try {
+      const { data, error } = await supabase
+        .from('amizades')
+        .select(`
+          id,
+          status,
+          u1:usuario_id (id, nome, codigo_interno, organizacao_militar, foto_perfil, funcao)
+        `)
+        .eq('amigo_id', userId)
+        .eq('status', 'pendente');
+      
+      if (error) {
+        if (error.code === '42703') { // undefined_column
+           return res.json([]); // No pending requests if column missing
+        }
+        throw error;
+      }
+      
+      const pendentes = data?.map((a: any) => ({
+        ...a.u1,
+        amizade_id: a.id
+      })) || [];
+      res.json(pendentes);
+    } catch (err: any) {
+      console.error("Error fetching pending friends:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/amizades/responder", async (req, res) => {
+    const { amizade_id, aceitar, usuario_id } = req.body; // usuario_id is who is responding (the target of original request)
+    if (aceitar) {
+      const { data: amizade } = await supabase.from('amizades').update({ status: 'aceito' }).eq('id', amizade_id).select().single();
+      if (amizade) {
+        // Notify the original requester
+        const requesterId = amizade.usuario_id === usuario_id ? amizade.amigo_id : amizade.usuario_id;
+        const { data: responder } = await supabase.from('usuarios').select('nome').eq('id', usuario_id).single();
+        await createNotification(requesterId, 'amizade', `${responder?.nome || 'Alguém'} aceitou sua solicitação de amizade.`, `/chat`);
+      }
+    } else {
+      await supabase.from('amizades').delete().eq('id', amizade_id);
+    }
+    res.json({ success: true });
+  });
+
+  app.post("/api/amizades/solicitar", async (req, res) => {
+    const usuario_id = parseInt(req.body.usuario_id);
+    const amigo_id = parseInt(req.body.amigo_id);
+
+    if (isNaN(usuario_id) || isNaN(amigo_id)) {
+      return res.status(400).json({ error: "IDs inválidos." });
+    }
+
+    // Check if friendship already exists
+    const { data: existing } = await supabase
+      .from('amizades')
+      .select('id, status')
+      .or(`and(usuario_id.eq.${usuario_id},amigo_id.eq.${amigo_id}),and(usuario_id.eq.${amigo_id},amigo_id.eq.${usuario_id})`)
+      .maybeSingle();
+
+    if (existing) {
+      if (existing.status === 'pendente') {
+        return res.status(400).json({ error: "Já existe uma solicitação pendente." });
+      }
+      if (existing.status === 'aceito') {
+        return res.status(400).json({ error: "Vocês já são amigos." });
+      }
+      return res.status(400).json({ error: "Solicitação já enviada." });
+    }
+
+    // Try to insert with status
+    const { error } = await supabase.from('amizades').insert({ usuario_id, amigo_id, status: 'pendente' });
+    
+    if (error) {
+      console.error("Error inserting amizade:", JSON.stringify(error, null, 2));
+      
+      // Handle unique violation (race condition)
+      if (error.code === '23505') {
+        return res.status(400).json({ error: "Solicitação já enviada ou amizade já existe." });
+      }
+
+      // Fallback for missing column (if user didn't run migration)
+      if (error.code === '42703') { // undefined_column
+         const { error: retryError } = await supabase.from('amizades').insert({ usuario_id, amigo_id });
+         if (retryError) {
+            console.error("Error retrying insert:", retryError);
+            return res.status(500).json({ error: retryError.message });
+         }
+         
+         // Notify target (instant friendship fallback)
+         const { data: sender } = await supabase.from('usuarios').select('nome').eq('id', usuario_id).single();
+         await createNotification(amigo_id, 'amizade', `${sender?.nome || 'Alguém'} adicionou você como amigo.`, `/chat`);
+         return res.json({ success: true, warning: "Migration not applied, friendship created instantly." });
+      }
+      return res.status(500).json({ error: error.message || "Erro desconhecido ao adicionar amigo." });
+    }
+    
+    // Notify target
+    const { data: sender } = await supabase.from('usuarios').select('nome').eq('id', usuario_id).single();
+    await createNotification(amigo_id, 'amizade', `${sender?.nome || 'Alguém'} enviou uma solicitação de amizade.`, `/chat`);
+    
+    res.json({ success: true });
   });
 
   app.get("/api/itens", async (req, res) => {
@@ -323,7 +649,8 @@ async function startServer() {
     const formatted = empresas.map((e: any) => ({
       ...e,
       indicado_por: e.usuarios?.nome,
-      total_validacoes: e.validacoes_empresas?.[0]?.count || 0
+      total_validacoes: e.validacoes_empresas?.[0]?.count || 0,
+      data_indicacao: e.data_indicacao || e.data_cadastro || e.created_at
     }));
 
     res.json(formatted);
@@ -331,8 +658,17 @@ async function startServer() {
 
   app.post("/api/empresas", async (req, res) => {
     const { cnpj, razao_social, telefones, emails, tipo, numero_item, usuario_id } = req.body;
+    const now = new Date().toISOString();
     const { data: info, error } = await supabase.from('empresas').insert({
-      cnpj, razao_social, telefones: JSON.stringify(telefones), emails: JSON.stringify(emails), tipo, numero_item, indicado_por_id: usuario_id
+      cnpj, 
+      razao_social, 
+      telefones: JSON.stringify(telefones), 
+      emails: JSON.stringify(emails), 
+      tipo, 
+      numero_item, 
+      indicado_por_id: usuario_id,
+      data_indicacao: now,
+      data_cadastro: now
     }).select().single();
 
     if (error) return res.status(400).json({ error: "Erro ao cadastrar empresa ou CNPJ já existe." });
@@ -341,27 +677,72 @@ async function startServer() {
   });
 
   app.get("/api/ranking", async (req, res) => {
-    const { data: ranking, error } = await supabase
-      .from('usuarios')
-      .select(`
-        id, nome, organizacao_militar, foto_perfil,
-        consultas (count),
-        comentarios (count),
-        validacoes_empresas (count)
-      `)
-      .eq('ativo', true);
+    try {
+      console.log("Fetching ranking data...");
+      // Fetch users
+      const { data: users, error } = await supabase.from('usuarios').select('id, nome, organizacao_militar, foto_perfil, codigo_interno').eq('ativo', true);
+      if (error) throw error;
 
-    if (error) return res.status(500).json({ error: error.message });
+      // Fetch counts manually to avoid join issues
+      // Consultas
+      const { data: consultas } = await supabase.from('consultas').select('usuario_id');
+      const consultasMap: Record<number, number> = {};
+      consultas?.forEach((c: any) => consultasMap[c.usuario_id] = (consultasMap[c.usuario_id] || 0) + 1);
 
-    const formatted = ranking.map((u: any) => ({
-      id: u.id,
-      nome: u.nome,
-      om: u.organizacao_militar,
-      foto: u.foto_perfil,
-      pontos: (u.consultas?.[0]?.count || 0) * 10 + (u.comentarios?.[0]?.count || 0) * 5 + (u.validacoes_empresas?.[0]?.count || 0) * 2
-    })).sort((a, b) => b.pontos - a.pontos);
+      // Comentarios
+      const { data: comentarios } = await supabase.from('comentarios').select('usuario_id');
+      const comentariosMap: Record<number, number> = {};
+      comentarios?.forEach((c: any) => comentariosMap[c.usuario_id] = (comentariosMap[c.usuario_id] || 0) + 1);
 
-    res.json(formatted);
+      // Empresas
+      const { data: empresas } = await supabase.from('empresas').select('indicado_por_id');
+      const empresasMap: Record<number, number> = {};
+      empresas?.forEach((e: any) => empresasMap[e.indicado_por_id] = (empresasMap[e.indicado_por_id] || 0) + 1);
+
+      // Validacoes
+      const { data: validacoes } = await supabase.from('validacoes_empresas').select('usuario_id');
+      const validacoesMap: Record<number, number> = {};
+      validacoes?.forEach((v: any) => validacoesMap[v.usuario_id] = (validacoesMap[v.usuario_id] || 0) + 1);
+      
+      console.log("Validacoes map:", validacoesMap);
+
+      // Curtidas em Comentarios (Received)
+      const { data: allComments } = await supabase.from('comentarios').select('usuario_id, curtidas_comentarios(count)');
+      const likesReceivedMap: Record<number, number> = {};
+      allComments?.forEach((c: any) => {
+         const likes = c.curtidas_comentarios?.[0]?.count || 0;
+         if (likes > 0) likesReceivedMap[c.usuario_id] = (likesReceivedMap[c.usuario_id] || 0) + likes;
+      });
+      
+      console.log("Ranking maps built. Users:", users?.length);
+
+      const formatted = users.map((u: any) => {
+        const total_consultas = consultasMap[u.id] || 0;
+        const total_respostas = comentariosMap[u.id] || 0;
+        const total_fornecedores = empresasMap[u.id] || 0;
+        const total_validacoes_feitas = validacoesMap[u.id] || 0;
+        const total_curtidas_recebidas = likesReceivedMap[u.id] || 0;
+
+        // Pontuação: Consulta (10), Resposta (2), Curtida (1), Fornecedor (3), Validação (2)
+        const pontuacao_total = (total_consultas * 10) + (total_respostas * 2) + (total_curtidas_recebidas * 1) + (total_fornecedores * 3) + (total_validacoes_feitas * 2);
+
+        return {
+          nome: u.nome,
+          codigo_interno: u.codigo_interno,
+          organizacao_militar: u.organizacao_militar,
+          total_respostas,
+          total_curtidas_recebidas,
+          total_consultas,
+          total_fornecedores,
+          total_validacoes_feitas,
+          pontuacao_total
+        };
+      }).sort((a: any, b: any) => b.pontuacao_total - a.pontuacao_total);
+
+      res.json(formatted);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
   });
 
   app.get("/api/conversas/:userId", async (req, res) => {
@@ -437,10 +818,58 @@ async function startServer() {
 
     await supabase.from('conversas').update({ data_ultima_mensagem: new Date().toISOString() }).eq('id', cid);
 
+    // Notify recipient
+    if (destinatario_id) {
+      const { data: sender } = await supabase.from('usuarios').select('nome').eq('id', remetente_id).single();
+      await createNotification(destinatario_id, 'mensagem', `Nova mensagem de ${sender?.nome || 'Alguém'}.`, `/chat`);
+    }
+
     res.json(msg);
   });
 
-  app.get("/api/admin/auditoria", async (req, res) => {
+  app.patch("/api/consultas/:id/status", async (req, res) => {
+    const { status, usuario_id } = req.body;
+    const { error } = await supabase.from('consultas').update({ 
+      status
+    }).eq('id', req.params.id);
+    if (error) {
+      console.error("Error updating status:", error);
+      return res.status(500).json({ error: error.message });
+    }
+    await logAuditoria(usuario_id, 'Alteração de Status', `Status da consulta ${req.params.id} alterado para: ${status}`, req.params.id);
+    
+    // Notify author
+    const { data: consulta } = await supabase.from('consultas').select('usuario_id, numero_item').eq('id', req.params.id).single();
+    if (consulta && consulta.usuario_id !== usuario_id) {
+      await createNotification(consulta.usuario_id, 'status', `O status do seu chamado ${consulta.numero_item} foi alterado para ${status}.`, `/consulta/${req.params.id}`);
+    }
+    
+    res.json({ success: true });
+  });
+
+  app.post("/api/empresas/:id/validar", async (req, res) => {
+    const { usuario_id } = req.body;
+    const empresaId = req.params.id;
+    
+    const { data: empresa } = await supabase.from('empresas').select('indicado_por_id').eq('id', empresaId).single();
+    if (!empresa) return res.status(404).json({ error: "Fornecedor não encontrado" });
+    
+    if (empresa.indicado_por_id === usuario_id) {
+      return res.status(400).json({ error: "Você não pode validar sua própria informação." });
+    }
+    
+    try {
+      const { error } = await supabase.from('validacoes_empresas').insert({ empresa_id: empresaId, usuario_id });
+      if (error) throw error;
+      await logAuditoria(usuario_id, 'Validação de Fornecedor', `Validou fornecedor ID: ${empresaId}`);
+      res.json({ success: true });
+    } catch (e) {
+      await supabase.from('validacoes_empresas').delete().match({ empresa_id: empresaId, usuario_id });
+      res.json({ success: true, removed: true });
+    }
+  });
+
+  app.get("/api/auditoria", async (req, res) => {
     const { data } = await supabase
       .from('auditoria')
       .select(`*, usuarios:usuario_id (nome, organizacao_militar)`)
@@ -453,6 +882,73 @@ async function startServer() {
       organizacao_militar: a.usuarios?.organizacao_militar
     }));
     res.json(formatted || []);
+  });
+
+  app.get("/api/stats", async (req, res) => {
+    try {
+      const stats: any = {};
+      
+      // OM com mais chamados abertos
+      const { data: abertosData } = await supabase
+        .from('consultas')
+        .select('status, usuarios!inner(organizacao_militar)')
+        .eq('status', 'aberto');
+      
+      const omsAbertos: Record<string, number> = {};
+      abertosData?.forEach((c: any) => {
+        const om = c.usuarios?.organizacao_militar;
+        if (om) omsAbertos[om] = (omsAbertos[om] || 0) + 1;
+      });
+      stats.oms_abertos = Object.entries(omsAbertos)
+        .map(([label, value]) => ({ label, value }))
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 10);
+
+      // OM com mais chamados resolvidos
+      const { data: resolvidosData } = await supabase
+        .from('consultas')
+        .select('status, usuarios!inner(organizacao_militar)')
+        .eq('status', 'resolvido');
+      
+      const omsResolvidos: Record<string, number> = {};
+      resolvidosData?.forEach((c: any) => {
+        const om = c.usuarios?.organizacao_militar;
+        if (om) omsResolvidos[om] = (omsResolvidos[om] || 0) + 1;
+      });
+      stats.oms_resolvidos = Object.entries(omsResolvidos)
+        .map(([label, value]) => ({ label, value }))
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 10);
+
+      // Itens com mais comentários
+      const { data: itensComData } = await supabase
+        .from('consultas')
+        .select('numero_item, comentarios(count)');
+      
+      stats.itens_comentarios = itensComData?.map((c: any) => ({
+        label: c.numero_item,
+        value: c.comentarios?.[0]?.count || 0
+      })).sort((a, b) => b.value - a.value).slice(0, 10) || [];
+
+      // Itens com mais fornecedores
+      const { data: itensFornData } = await supabase
+        .from('empresas')
+        .select('numero_item');
+      
+      const itensForn: Record<string, number> = {};
+      itensFornData?.forEach((e: any) => {
+        if (e.numero_item) itensForn[e.numero_item] = (itensForn[e.numero_item] || 0) + 1;
+      });
+      stats.itens_fornecedores = Object.entries(itensForn)
+        .map(([label, value]) => ({ label, value }))
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 10);
+
+      res.json(stats);
+    } catch (error) {
+      console.error('Erro ao buscar estatísticas:', error);
+      res.status(500).json({ error: 'Erro ao buscar estatísticas' });
+    }
   });
 
   app.get("/api/admin/users", async (req, res) => {
@@ -540,6 +1036,11 @@ async function startServer() {
     await migrate('auditoria', 'auditoria');
 
     res.json(results);
+  });
+
+  // Catch-all for unhandled API routes to prevent HTML response
+  app.all("/api/*", (req, res) => {
+    res.status(404).json({ error: `Rota API não encontrada: ${req.method} ${req.path}` });
   });
 
   // Vite middleware for development

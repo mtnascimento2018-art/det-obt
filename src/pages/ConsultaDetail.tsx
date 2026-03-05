@@ -58,21 +58,38 @@ export default function ConsultaDetail({ user }: ConsultaDetailProps) {
         fetch(`/api/consultas/${id}`),
         fetch(`/api/consultas/${id}/comentarios`)
       ]);
+      fetch(`/api/consultas/${id}/visualizar`, { method: 'POST' });
 
-      if (cRes.ok) {
-        const cData = await cRes.json();
-        setConsulta(cData);
+      const safeJson = async (res: Response) => {
+        if (!res.ok) return null;
+        const text = await res.text();
+        try {
+          return JSON.parse(text);
+        } catch (e) {
+          console.error('Falha ao parsear JSON da rota:', res.url, text.substring(0, 100));
+          return null;
+        }
+      };
+
+      const cData = await safeJson(cRes);
+      if (cData) {
+        setConsulta({ ...cData, visualizacoes: (cData.visualizacoes || 0) + 1 });
         const [empRes, auditRes] = await Promise.all([
-          fetch(`/api/empresas?numero_item=${cData.numero_item}&usuario_id=${user.id}`),
+          fetch(`/api/empresas?consulta_id=${id}&usuario_id=${user.id}`),
           fetch(`/api/auditoria?objeto_afetado=${id}`)
         ]);
-        if (empRes.ok) setEmpresas(await empRes.json());
-        if (auditRes.ok) {
-          const logs: AuditoriaLog[] = await auditRes.json();
-          setStatusHistory(logs.filter(l => l.acao === 'Alteração de Status'));
+        
+        const empData = await safeJson(empRes);
+        const auditData = await safeJson(auditRes);
+        
+        if (empData) setEmpresas(empData);
+        if (auditData) {
+          setStatusHistory(auditData.filter((l: any) => l.acao === 'Alteração de Status'));
         }
       }
-      if (comRes.ok) setComentarios(await comRes.json());
+      
+      const comData = await safeJson(comRes);
+      if (comData) setComentarios(comData);
     } catch (err) {
       console.error('Erro ao buscar dados', err);
     } finally {
@@ -90,6 +107,7 @@ export default function ConsultaDetail({ user }: ConsultaDetailProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...newEmpresa,
+          consulta_id: id,
           numero_item: consulta.numero_item,
           indicado_por_id: user.id,
           telefones: newEmpresa.telefones.filter(t => t.trim() !== ''),
@@ -106,7 +124,7 @@ export default function ConsultaDetail({ user }: ConsultaDetailProps) {
           emails: ['', '', ''],
           tipo: 'fornece',
         });
-        const empRes = await fetch(`/api/empresas?numero_item=${consulta.numero_item}&usuario_id=${user.id}`);
+        const empRes = await fetch(`/api/empresas?consulta_id=${id}&usuario_id=${user.id}`);
         if (empRes.ok) setEmpresas(await empRes.json());
         alert('Fornecedor indicado com sucesso!');
       } else {
@@ -129,7 +147,7 @@ export default function ConsultaDetail({ user }: ConsultaDetailProps) {
         body: JSON.stringify({ usuario_id: user.id })
       });
       if (res.ok) {
-        const empRes = await fetch(`/api/empresas?numero_item=${consulta?.numero_item}&usuario_id=${user.id}`);
+        const empRes = await fetch(`/api/empresas?consulta_id=${id}&usuario_id=${user.id}`);
         if (empRes.ok) setEmpresas(await empRes.json());
       } else {
         const data = await res.json();
@@ -171,6 +189,7 @@ export default function ConsultaDetail({ user }: ConsultaDetailProps) {
   };
 
   const handleUpdateStatus = async (status: 'resolvido' | 'reaberto') => {
+    console.log("Updating status to:", status, "User profile:", user.perfil);
     try {
       const response = await fetch(`/api/consultas/${id}/status`, {
         method: 'PATCH',
@@ -184,6 +203,10 @@ export default function ConsultaDetail({ user }: ConsultaDetailProps) {
 
       if (response.ok) {
         fetchData();
+      } else {
+        const errorData = await response.json();
+        console.error("Error updating status:", errorData);
+        alert(`Erro ao atualizar status: ${errorData.error}`);
       }
     } catch (err) {
       console.error('Erro ao atualizar status', err);
@@ -397,12 +420,14 @@ export default function ConsultaDetail({ user }: ConsultaDetailProps) {
 
   const handleMentionClick = async (mention: string) => {
     const nip = mention.substring(1); // Remove @
+    console.log("Mention clicked:", mention, "NIP:", nip);
     try {
       const res = await fetch(`/api/users/nip/${nip}`);
       if (res.ok) {
         const u = await res.json();
         setSelectedUser(u);
       } else {
+        console.error("User not found for NIP:", nip);
         // alert("Usuário não encontrado");
       }
     } catch (err) {
@@ -462,6 +487,25 @@ export default function ConsultaDetail({ user }: ConsultaDetailProps) {
               <span className="text-[#39FF14]">{consulta.autor_om}</span>
               <span>•</span>
               <span>Postado por {consulta.autor_nome}</span>
+              {consulta.autor_perfil && (
+                <>
+                  <span>•</span>
+                  <span className={`px-1.5 py-0.5 rounded text-[8px] border ${
+                    consulta.autor_perfil === 'admin' ? 'bg-red-500/10 text-red-500 border-red-500/20' :
+                    consulta.autor_perfil === 'obtencao' ? 'bg-blue-500/10 text-blue-500 border-blue-500/20' :
+                    consulta.autor_perfil === 'catalogacao' ? 'bg-purple-500/10 text-purple-500 border-purple-500/20' :
+                    consulta.autor_perfil === 'diretoria' ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20' :
+                    consulta.autor_perfil === 'especialista' ? 'bg-orange-500/10 text-orange-500 border-orange-500/20' :
+                    'bg-[#39FF14]/10 text-[#39FF14] border-[#39FF14]/20'
+                  }`}>
+                    {consulta.autor_perfil === 'admin' ? 'Administrador' :
+                     consulta.autor_perfil === 'obtencao' ? 'Obtenção' :
+                     consulta.autor_perfil === 'catalogacao' ? 'Catalogação' :
+                     consulta.autor_perfil === 'diretoria' ? 'Diretoria' :
+                     consulta.autor_perfil === 'especialista' ? 'Especialista' : 'Usuário'}
+                  </span>
+                </>
+              )}
               <span>•</span>
               <span>{new Date(consulta.data_criacao).toLocaleString()}</span>
             </div>
@@ -697,9 +741,9 @@ export default function ConsultaDetail({ user }: ConsultaDetailProps) {
                       </div>
                       <div className="flex items-center gap-2 text-[10px]">
                         <span className="text-[#818384]">Alterado por:</span>
-                        <span className="text-white font-bold">{log.nome_guerra}</span>
-                        <span className="px-1.5 py-0.5 bg-[#39FF14]/10 text-[#39FF14] rounded text-[8px] font-black uppercase">{log.perfil}</span>
-                        <span className="text-[#818384]">({log.organizacao_militar})</span>
+                        <span className="text-white font-bold">{log.nome_guerra || 'Sistema'}</span>
+                        <span className="px-1.5 py-0.5 bg-[#39FF14]/10 text-[#39FF14] rounded text-[8px] font-black uppercase">{log.perfil || 'AUTO'}</span>
+                        <span className="text-[#818384]">({log.organizacao_militar || '-'})</span>
                       </div>
                     </div>
                   ))}
@@ -886,7 +930,7 @@ export default function ConsultaDetail({ user }: ConsultaDetailProps) {
                 />
               ) : (
                 <div className="w-10 h-10 bg-[#0D2D0D] border border-[#1A3A1A] rounded-full shrink-0 flex items-center justify-center text-[#39FF14] font-bold">
-                  {com.autor_nome[0]}
+                  {com.autor_nome?.[0] || '?'}
                 </div>
               )}
               <div className="flex-1 space-y-2">
@@ -908,11 +952,17 @@ export default function ConsultaDetail({ user }: ConsultaDetailProps) {
                         <span>•</span>
                         <span className={`px-1.5 py-0.5 rounded text-[8px] border ${
                           com.autor_perfil === 'admin' ? 'bg-red-500/10 text-red-500 border-red-500/20' :
-                          com.autor_perfil === 'obtencao' ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20' :
+                          com.autor_perfil === 'obtencao' ? 'bg-blue-500/10 text-blue-500 border-blue-500/20' :
+                          com.autor_perfil === 'catalogacao' ? 'bg-purple-500/10 text-purple-500 border-purple-500/20' :
+                          com.autor_perfil === 'diretoria' ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20' :
+                          com.autor_perfil === 'especialista' ? 'bg-orange-500/10 text-orange-500 border-orange-500/20' :
                           'bg-[#39FF14]/10 text-[#39FF14] border-[#39FF14]/20'
                         }`}>
                           {com.autor_perfil === 'admin' ? 'Administrador' :
-                           com.autor_perfil === 'obtencao' ? 'Obtenção' : 'Usuário'}
+                           com.autor_perfil === 'obtencao' ? 'Obtenção' :
+                           com.autor_perfil === 'catalogacao' ? 'Catalogação' :
+                           com.autor_perfil === 'diretoria' ? 'Diretoria' :
+                           com.autor_perfil === 'especialista' ? 'Especialista' : 'Usuário'}
                         </span>
                       </>
                     )}

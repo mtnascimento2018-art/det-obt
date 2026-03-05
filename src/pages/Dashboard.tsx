@@ -260,15 +260,13 @@ export default function Dashboard({ user }: DashboardProps) {
               <Filter className="w-4 h-4" />
             </button>
           </div>
-          {(user.perfil === 'obtencao' || user.perfil === 'admin') && (
-            <button
-              onClick={() => setShowNewForm(true)}
-              className="w-full md:w-auto reddit-button-primary flex items-center justify-center gap-2 h-11"
-            >
-              <PlusCircle className="w-5 h-5" />
-              <span>Nova Consulta</span>
-            </button>
-          )}
+          <button
+            onClick={() => setShowNewForm(true)}
+            className="w-full md:w-auto reddit-button-primary flex items-center justify-center gap-2 h-11"
+          >
+            <PlusCircle className="w-5 h-5" />
+            <span>Nova Consulta</span>
+          </button>
         </div>
 
         {/* Advanced Filters */}
@@ -580,6 +578,25 @@ export default function Dashboard({ user }: DashboardProps) {
                     <span className="text-[#39FF14]">{c.autor_om}</span>
                     <span>•</span>
                     <span>Postado por {c.autor_nome}</span>
+                    {c.autor_perfil && (
+                      <>
+                        <span>•</span>
+                        <span className={`px-1.5 py-0.5 rounded text-[8px] border ${
+                          c.autor_perfil === 'admin' ? 'bg-red-500/10 text-red-500 border-red-500/20' :
+                          c.autor_perfil === 'obtencao' ? 'bg-blue-500/10 text-blue-500 border-blue-500/20' :
+                          c.autor_perfil === 'catalogacao' ? 'bg-purple-500/10 text-purple-500 border-purple-500/20' :
+                          c.autor_perfil === 'diretoria' ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20' :
+                          c.autor_perfil === 'especialista' ? 'bg-orange-500/10 text-orange-500 border-orange-500/20' :
+                          'bg-[#39FF14]/10 text-[#39FF14] border-[#39FF14]/20'
+                        }`}>
+                          {c.autor_perfil === 'admin' ? 'Administrador' :
+                           c.autor_perfil === 'obtencao' ? 'Obtenção' :
+                           c.autor_perfil === 'catalogacao' ? 'Catalogação' :
+                           c.autor_perfil === 'diretoria' ? 'Diretoria' :
+                           c.autor_perfil === 'especialista' ? 'Especialista' : 'Usuário'}
+                        </span>
+                      </>
+                    )}
                     <span>•</span>
                     <span>{new Date(c.data_criacao).toLocaleDateString()}</span>
                   </div>

@@ -148,7 +148,7 @@ export default function Empresas({ user }: EmpresasProps) {
     }
   });
 
-  const uniqueMeios = Array.from(new Set(Object.values(groupedItems).map(g => g.meio_operacional).filter(Boolean))) as string[];
+  const uniqueMeios = Array.from(new Set(Object.values(groupedItems).map((g: any) => g.meio_operacional).filter(Boolean))) as string[];
 
   const toggleMeio = (meio: string) => {
     setSelectedMeios(prev => prev.includes(meio) ? prev.filter(m => m !== meio) : [...prev, meio]);
@@ -393,7 +393,7 @@ export default function Empresas({ user }: EmpresasProps) {
                               </div>
                               <div className="flex items-center gap-1">
                                 <Calendar className="w-3 h-3" />
-                                <span>{new Date(emp.data_indicacao).toLocaleDateString()}</span>
+                                <span>{emp.data_indicacao ? new Date(emp.data_indicacao).toLocaleDateString() : (emp.data_cadastro ? new Date(emp.data_cadastro).toLocaleDateString() : '-')}</span>
                               </div>
                             </div>
 

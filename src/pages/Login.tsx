@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Loader2, Sparkles, Camera, Anchor } from 'lucide-react';
 import { motion } from 'motion/react';
-import { Usuario } from '../types';
+import { Usuario, Perfil } from '../types';
 
 interface LoginProps {
   onLogin: (user: Usuario) => void;
@@ -22,7 +22,8 @@ export default function Login({ onLogin }: LoginProps) {
     organizacao_militar: '',
     funcao: '',
     conhecimento_material: '',
-    foto_perfil: ''
+    foto_perfil: '',
+    perfil: 'usuario' as Perfil
   });
 
   const [oms, setOms] = useState<{id: number, nome: string}[]>([]);
@@ -41,9 +42,25 @@ export default function Login({ onLogin }: LoginProps) {
           fetch('/api/config/funcoes'),
           fetch('/api/config/conhecimentos')
         ]);
-        if (omsRes.ok) setOms(await omsRes.json());
-        if (funcoesRes.ok) setFuncoes(await funcoesRes.json());
-        if (conhecimentosRes.ok) setConhecimentos(await conhecimentosRes.json());
+        
+        const safeJson = async (res: Response) => {
+          if (!res.ok) return null;
+          const text = await res.text();
+          try {
+            return JSON.parse(text);
+          } catch (e) {
+            console.error('Falha ao parsear JSON da rota:', res.url, text.substring(0, 100));
+            return null;
+          }
+        };
+
+        const omsData = await safeJson(omsRes);
+        const funcoesData = await safeJson(funcoesRes);
+        const conhecimentosData = await safeJson(conhecimentosRes);
+
+        if (omsData) setOms(omsData);
+        if (funcoesData) setFuncoes(funcoesData);
+        if (conhecimentosData) setConhecimentos(conhecimentosData);
       } catch (err) {
         console.error('Erro ao carregar configurações', err);
       }
@@ -313,45 +330,61 @@ export default function Login({ onLogin }: LoginProps) {
                   )}
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold mb-1 text-[#39FF14] uppercase">Função Atual</label>
-                  {!showOtherFuncao ? (
-                    <select
-                      required
-                      value={regData.funcao}
-                      onChange={(e) => {
-                        if (e.target.value === 'outro') {
-                          setShowOtherFuncao(true);
-                          setRegData({ ...regData, funcao: '' });
-                        } else {
-                          setRegData({ ...regData, funcao: e.target.value });
-                        }
-                      }}
-                      className="w-full reddit-input text-sm"
-                    >
-                      <option value="">Selecione a Função</option>
-                      {funcoes.map(f => <option key={f.id} value={f.nome}>{f.nome}</option>)}
-                      <option value="outro" className="text-[#39FF14] font-bold">Outro...</option>
-                    </select>
-                  ) : (
-                    <div className="flex gap-2">
-                      <input
-                        required
-                        type="text"
-                        value={regData.funcao}
-                        onChange={(e) => setRegData({ ...regData, funcao: e.target.value })}
-                        className="w-full reddit-input text-sm"
-                        placeholder="Digite a Função"
-                      />
-                      <button 
-                        type="button"
-                        onClick={() => setShowOtherFuncao(false)}
-                        className="text-[10px] text-[#818384] hover:text-[#39FF14]"
-                      >
-                        Voltar
-                      </button>
-                    </div>
-                  )}
+                  <label className="block text-[10px] font-bold mb-1 text-[#39FF14] uppercase">Perfil de Acesso</label>
+                  <select
+                    required
+                    value={regData.perfil}
+                    onChange={(e) => setRegData({ ...regData, perfil: e.target.value as Perfil })}
+                    className="w-full reddit-input text-sm"
+                  >
+                    <option value="usuario">Militar Usuário</option>
+                    <option value="obtencao">Seção de Obtenção</option>
+                    <option value="catalogacao">Seção de Catalogação</option>
+                    <option value="diretoria">Diretoria</option>
+                    <option value="especialista">Especialista</option>
+                  </select>
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold mb-1 text-[#39FF14] uppercase">Função Atual</label>
+                {!showOtherFuncao ? (
+                  <select
+                    required
+                    value={regData.funcao}
+                    onChange={(e) => {
+                      if (e.target.value === 'outro') {
+                        setShowOtherFuncao(true);
+                        setRegData({ ...regData, funcao: '' });
+                      } else {
+                        setRegData({ ...regData, funcao: e.target.value });
+                      }
+                    }}
+                    className="w-full reddit-input text-sm"
+                  >
+                    <option value="">Selecione a Função</option>
+                    {funcoes.map(f => <option key={f.id} value={f.nome}>{f.nome}</option>)}
+                    <option value="outro" className="text-[#39FF14] font-bold">Outro...</option>
+                  </select>
+                ) : (
+                  <div className="flex gap-2">
+                    <input
+                      required
+                      type="text"
+                      value={regData.funcao}
+                      onChange={(e) => setRegData({ ...regData, funcao: e.target.value })}
+                      className="w-full reddit-input text-sm"
+                      placeholder="Digite a Função"
+                    />
+                    <button 
+                      type="button"
+                      onClick={() => setShowOtherFuncao(false)}
+                      className="text-[10px] text-[#818384] hover:text-[#39FF14]"
+                    >
+                      Voltar
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div>
